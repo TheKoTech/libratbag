@@ -1,0 +1,5 @@
+[Device]
+Name=Roccat Kone Pro Air
+DeviceMatch=usb:1e7d:2c8e;usb:1e7d:2c92
+Driver=roccat-kone-pro-air
+DeviceType=mouse
