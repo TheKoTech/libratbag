@@ -178,6 +178,7 @@ src_libratbag = [
 	'src/driver-logitech-g600.c',
 	'src/driver-roccat.c',
 	'src/driver-roccat-kone-emp.c',
+	'src/driver-roccat-kone-pro-air.c',
 	'src/driver-roccat-kone-pure.c',
 	'src/driver-gskill.c',
 	'src/driver-openinput.c',
