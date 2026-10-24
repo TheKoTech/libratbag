@@ -37,8 +37,10 @@
  * treats it as one device-wide setting and writes the same value into all
  * profiles. This driver does the same.
  *
- * Not exposed: macros, distance control, the Easy-Shift layer, the
- * energy-saving options and the profile colour.
+ * Key shortcuts (a key with modifiers) are shown as macros, because that is
+ * how libratbag expresses them; they are stored as a plain button table
+ * entry. Not exposed: real macros, distance control, the Easy-Shift layer,
+ * the energy-saving options and the profile colour.
  */
 
 #include "config.h"
@@ -453,6 +455,8 @@ pa_fill_button(struct ratbag_button *button, const uint8_t *fns,
 	ratbag_button_enable_action_type(button, RATBAG_BUTTON_ACTION_TYPE_BUTTON);
 	ratbag_button_enable_action_type(button, RATBAG_BUTTON_ACTION_TYPE_SPECIAL);
 	ratbag_button_enable_action_type(button, RATBAG_BUTTON_ACTION_TYPE_KEY);
+	/* only macros of one key plus modifiers, see pa_encode_action() */
+	ratbag_button_enable_action_type(button, RATBAG_BUTTON_ACTION_TYPE_MACRO);
 
 	/* anything that is not understood is kept as it is on writes */
 	action->type = RATBAG_BUTTON_ACTION_TYPE_UNKNOWN;
@@ -489,12 +493,19 @@ pa_fill_button(struct ratbag_button *button, const uint8_t *fns,
 		unsigned int usage = e[2];
 		unsigned int key;
 
-		/* a single modifier is `01 <mask> 00`, shortcuts stay unknown */
+		/* a shortcut is `01 <mask> <key>`, libratbag shows it as a key macro */
+		if (e[1] && e[2]) {
+			key = ratbag_hidraw_get_keycode_from_keyboard_usage(button->profile->device, usage);
+			/* the mask has the HID modifier bit order, as MODIFIER_* */
+			if (key && ratbag_button_macro_new_from_keycode(button, key, e[1]) < 0)
+				action->type = RATBAG_BUTTON_ACTION_TYPE_UNKNOWN;
+			return;
+		}
+
+		/* a single modifier is `01 <mask> 00` */
 		if (e[1]) {
 			unsigned int bit;
 
-			if (e[2])
-				return;
 			for (bit = 0; bit < 8; bit++) {
 				if (e[1] == 1 << bit)
 					break;
@@ -635,7 +646,7 @@ pa_encode_action(struct ratbag_device *device,
 		 const struct ratbag_button_action *action,
 		 uint8_t *fn, uint8_t *entry)
 {
-	unsigned int usage;
+	unsigned int usage, key, modifiers;
 
 	memset(entry, 0, PA_ENTRY_SIZE);
 
@@ -660,6 +671,18 @@ pa_encode_action(struct ratbag_device *device,
 			entry[1] = 1 << (usage - PA_HID_MODIFIER_0);
 		else
 			entry[2] = usage;
+		return true;
+	case RATBAG_BUTTON_ACTION_TYPE_MACRO:
+		/* one key with modifiers fits a table entry, real macros do not */
+		if (ratbag_action_keycode_from_macro(action, &key, &modifiers) < 0)
+			return false;
+		usage = ratbag_hidraw_get_keyboard_usage_from_keycode(device, key);
+		if (!usage)
+			return false;
+		*fn = PA_FN_ORDINARY;
+		entry[0] = PA_ENTRY_KEY;
+		entry[1] = modifiers;
+		entry[2] = usage;
 		return true;
 	case RATBAG_BUTTON_ACTION_TYPE_SPECIAL:
 		for (size_t i = 0; i < ARRAY_LENGTH(pa_functions); i++) {
@@ -757,7 +780,7 @@ pa_write_buttons(struct ratbag_profile *profile)
 		if (!button->dirty)
 			continue;
 
-		/* unknown actions (macros, shortcuts, ...) stay as they are */
+		/* unknown actions (real macros, ...) stay as they are */
 		if (!pa_encode_action(device, &button->action, &fn, entry)) {
 			log_debug(device->ratbag, "button %u: action not supported, keeping it\n",
 				  button->index);
