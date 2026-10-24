@@ -396,6 +396,81 @@ START_TEST(device_profiles_get_invalid)
 }
 END_TEST
 
+START_TEST(device_profiles_debounce)
+{
+	struct ratbag *r;
+	struct ratbag_device *d;
+	struct ratbag_profile *p;
+	int nprofiles;
+	int device_freed_count = 0;
+
+	struct ratbag_test_device td = sane_device;
+
+	td.destroyed_data = &device_freed_count;
+
+	r = ratbag_create_context(&abort_iface, NULL);
+	d = ratbag_device_new_test_device(r, &td);
+
+	nprofiles = ratbag_device_get_num_profiles(d);
+	ck_assert_int_eq(nprofiles, 3);
+
+	p = ratbag_device_get_profile(d, 1);
+	ratbag_profile_set_debounce(p, 4);
+	ratbag_profile_unref(p);
+
+	/* without the global capability only the profile that was set changes */
+	for (int i = 0; i < nprofiles; i++) {
+		p = ratbag_device_get_profile(d, i);
+		ck_assert_int_eq(ratbag_profile_get_debounce(p), i == 1 ? 4 : -1);
+		ck_assert_int_eq(ratbag_profile_is_dirty(p), i == 1);
+		ratbag_profile_unref(p);
+	}
+
+	ratbag_device_unref(d);
+	ratbag_unref(r);
+	ck_assert_int_eq(device_freed_count, 1);
+}
+END_TEST
+
+START_TEST(device_profiles_global_debounce)
+{
+	struct ratbag *r;
+	struct ratbag_device *d;
+	struct ratbag_profile *p;
+	int nprofiles;
+	int device_freed_count = 0;
+
+	struct ratbag_test_device td = sane_device;
+
+	td.destroyed_data = &device_freed_count;
+	for (size_t i = 0; i < td.num_profiles; i++)
+		td.profiles[i].caps[0] = RATBAG_PROFILE_CAP_GLOBAL_DEBOUNCE;
+
+	r = ratbag_create_context(&abort_iface, NULL);
+	d = ratbag_device_new_test_device(r, &td);
+
+	nprofiles = ratbag_device_get_num_profiles(d);
+	ck_assert_int_eq(nprofiles, 3);
+
+	p = ratbag_device_get_profile(d, 1);
+	ck_assert(ratbag_profile_has_capability(p, RATBAG_PROFILE_CAP_GLOBAL_DEBOUNCE));
+	ratbag_profile_set_debounce(p, 4);
+	ratbag_profile_unref(p);
+
+	/* setting it on one profile sets it on all of them */
+	for (int i = 0; i < nprofiles; i++) {
+		p = ratbag_device_get_profile(d, i);
+		ck_assert_int_eq(ratbag_profile_get_debounce(p), 4);
+		ck_assert(ratbag_profile_is_dirty(p));
+		ratbag_profile_unref(p);
+	}
+
+	ratbag_device_unref(d);
+	ratbag_unref(r);
+	ck_assert_int_eq(device_freed_count, 1);
+}
+END_TEST
+
 START_TEST(device_resolutions)
 {
 	struct ratbag *r;
@@ -985,6 +1060,8 @@ test_context_suite(void)
 	tcase_add_test(tc, device_profiles_num_0);
 	tcase_add_test(tc, device_profiles_multiple_active);
 	tcase_add_test(tc, device_profiles_get_invalid);
+	tcase_add_test(tc, device_profiles_debounce);
+	tcase_add_test(tc, device_profiles_global_debounce);
 	tcase_add_test(tc, device_freed_before_profile);
 	tcase_add_test(tc, device_and_profile_freed_before_button);
 	tcase_add_test(tc, device_and_profile_freed_before_resolution);

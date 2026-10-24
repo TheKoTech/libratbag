@@ -822,6 +822,9 @@ ratbag_profile_get_angle_snapping(const struct ratbag_profile *profile);
  * If the profile mode is the currently active profile,
  * the change takes effect immediately.
  *
+ * If the profile has the @ref RATBAG_PROFILE_CAP_GLOBAL_DEBOUNCE
+ * capability, the debounce time is set on all profiles of the device.
+ *
  * @param profile A previously initialized ratbag profile
  * @param value Debounce time in ms
  *

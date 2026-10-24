@@ -272,7 +272,7 @@ struct ratbag_profile {
 
 	int debounce;	/**< debounce time in ms */
 	bool debounce_dirty;
-	unsigned int debounces[8];	/**< debounce times available */
+	unsigned int debounces[16];	/**< debounce times available */
 	size_t ndebounces;		/**< number of entries in debounces */
 
 	unsigned int num_resolutions;

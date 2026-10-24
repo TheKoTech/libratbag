@@ -207,6 +207,31 @@ org.freedesktop.ratbag1.Profile
 
         The zero-based index of this profile
 
+.. attribute:: Capabilities
+
+        :type: au
+        :flags: read-only, constant
+
+        List of capabilities.
+
+        +-------+-----------------------------------------------------+
+        | Value | Definition                                          |
+        +=======+=====================================================+
+        |  101  | Profile can be set as the default profile.          |
+        +-------+-----------------------------------------------------+
+        |  102  | Profile can be disabled and enabled.                |
+        +-------+-----------------------------------------------------+
+        |  104  | The debounce time is global: it is the same on all  |
+        |       | profiles, and setting :attr:`Debounce` on one       |
+        |       | profile sets it on all of them. Clients should      |
+        |       | present it as a device-wide setting.                |
+        +-------+-----------------------------------------------------+
+
+        (Source: :cpp:enum:`ratbag_profile_capability` in `libratbag.h`).
+
+        In the future, extra values may get added. Clients must ignore
+        unknown Capabilities.
+
 .. attribute:: Name
 
         :type: s
@@ -293,6 +318,10 @@ org.freedesktop.ratbag1.Profile
         profile. This time must be one of those listed in
         :attr:`Debounces`, or `-1` to indicate that changing debounce time
         for this device is not allowed.
+
+        If the profile has the global debounce capability (see
+        :attr:`Capabilities`), the value is shared by all profiles and
+        setting it on one profile changes it on all of them.
 
 .. attribute:: Debounces
 

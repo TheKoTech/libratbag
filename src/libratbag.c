@@ -1065,14 +1065,28 @@ ratbag_profile_set_angle_snapping(struct ratbag_profile *profile,
 	return RATBAG_SUCCESS;
 }
 
-LIBRATBAG_EXPORT enum ratbag_error_code
-ratbag_profile_set_debounce(struct ratbag_profile *profile,
-			    int value)
+static void
+ratbag_profile_store_debounce(struct ratbag_profile *profile, int value)
 {
 	if (profile->debounce != value) {
 		profile->debounce = value;
 		profile->dirty = true;
 		profile->debounce_dirty = true;
+	}
+}
+
+LIBRATBAG_EXPORT enum ratbag_error_code
+ratbag_profile_set_debounce(struct ratbag_profile *profile,
+			    int value)
+{
+	struct ratbag_profile *p;
+
+	/* a device-wide debounce time is mirrored to every profile */
+	if (ratbag_profile_has_capability(profile, RATBAG_PROFILE_CAP_GLOBAL_DEBOUNCE)) {
+		ratbag_device_for_each_profile(profile->device, p)
+			ratbag_profile_store_debounce(p, value);
+	} else {
+		ratbag_profile_store_debounce(profile, value);
 	}
 
 	return RATBAG_SUCCESS;

@@ -259,7 +259,10 @@ def print_profile(device: RatbagdDevice, profile: RatbagdProfile, level: int) ->
         if profile.angle_snapping != -1:
             print(" " * level + f"Angle Snapping: {bool(profile.angle_snapping)}")
         if profile.debounce != -1:
-            print(" " * level + f"Debounce time: {profile.debounce}ms")
+            scope = ""
+            if RatbagdProfile.CAP_GLOBAL_DEBOUNCE in profile.capabilities:
+                scope = " (global, applies to all profiles)"
+            print(" " * level + f"Debounce time: {profile.debounce}ms{scope}")
         if profile.buttons:
             for button in profile.buttons:
                 print_button(device, profile, button, level)
@@ -1121,7 +1124,8 @@ Angle snapping commands work on the given profile, or on the active profile if n
         name: "debounce",
         help_str: """Access debounce time information
 
-Debounce commands work on the given profile, or on the active profile if none is given.""",
+Debounce commands work on the given profile, or on the active profile if none is given.
+On devices with a global debounce time, setting it changes all profiles.""",
         tag: "debounce",
         group: "Debounce",
         switch: [

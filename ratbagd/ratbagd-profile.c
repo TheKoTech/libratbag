@@ -442,6 +442,7 @@ ratbagd_profile_get_capabilities(sd_bus *bus,
 	enum ratbag_profile_capability caps[] = {
 		RATBAG_PROFILE_CAP_SET_DEFAULT,
 		RATBAG_PROFILE_CAP_DISABLE,
+		RATBAG_PROFILE_CAP_GLOBAL_DEBOUNCE,
 	};
 	size_t i;
 
@@ -555,16 +556,20 @@ ratbagd_profile_get_debounces(sd_bus *bus,
 {
 	struct ratbagd_profile *profile = userdata;
 	struct ratbag_profile *lib_profile = profile->lib_profile;
-	unsigned int debounces[8];
-	unsigned int ndebounces = ARRAY_LENGTH(debounces);
+	_cleanup_free_ unsigned int *debounces = NULL;
+	unsigned int first, ndebounces;
 	int r;
 
 	r = sd_bus_message_open_container(reply, 'a', "u");
 	if (r < 0)
 		return r;
 
-	ndebounces = ratbag_profile_get_debounce_list(lib_profile, debounces, ndebounces);
-	assert(ndebounces <= ARRAY_LENGTH(debounces));
+	/* the first call only returns the number of entries */
+	ndebounces = ratbag_profile_get_debounce_list(lib_profile, &first, 1);
+	if (ndebounces > 0) {
+		debounces = zalloc(ndebounces * sizeof(*debounces));
+		ratbag_profile_get_debounce_list(lib_profile, debounces, ndebounces);
+	}
 
 	for (unsigned int i = 0; i < ndebounces; i++) {
 		verify_unsigned_int(debounces[i]);
@@ -647,6 +652,19 @@ ratbagd_profile_set_angle_snapping(sd_bus *bus,
 }
 
 static int
+ratbagd_profile_notify_debounce(sd_bus *bus,
+				struct ratbagd_profile *profile)
+{
+	sd_bus_emit_properties_changed(bus,
+				       profile->path,
+				       RATBAGD_NAME_ROOT ".Profile",
+				       "Debounce",
+				       NULL);
+
+	return ratbagd_profile_notify_dirty(bus, profile);
+}
+
+static int
 ratbagd_profile_set_debounce(sd_bus *bus,
 			     const char *path,
 			     const char *interface,
@@ -666,13 +684,14 @@ ratbagd_profile_set_debounce(sd_bus *bus,
 	r = ratbag_profile_set_debounce(profile->lib_profile, value);
 	if (r == 0) {
 		sd_bus *bus = sd_bus_message_get_bus(m);
-		sd_bus_emit_properties_changed(bus,
-					       profile->path,
-					       RATBAGD_NAME_ROOT ".Profile",
-					       "Debounce",
-					       NULL);
 
-		ratbagd_profile_notify_dirty(bus, profile);
+		/* libratbag changed the other profiles too, tell their clients */
+		if (ratbag_profile_has_capability(profile->lib_profile,
+						  RATBAG_PROFILE_CAP_GLOBAL_DEBOUNCE))
+			ratbagd_for_each_profile_signal(bus, profile->device,
+							ratbagd_profile_notify_debounce);
+		else
+			ratbagd_profile_notify_debounce(bus, profile);
 	}
 
 	return 0;

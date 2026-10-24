@@ -119,6 +119,14 @@ enum ratbag_profile_capability {
 	 * libratbag can be used to query the device as normal.
 	 */
 	RATBAG_PROFILE_CAP_WRITE_ONLY,
+
+	/**
+	 * The debounce time is a device-wide setting, not a per-profile
+	 * one. Every profile reports the same value, and setting it on one
+	 * profile sets it on all profiles of the device. Clients should
+	 * present it as a global setting.
+	 */
+	RATBAG_PROFILE_CAP_GLOBAL_DEBOUNCE,
 };
 
 /**
