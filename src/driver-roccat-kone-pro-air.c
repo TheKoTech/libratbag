@@ -866,12 +866,38 @@ pa_write_profile(struct ratbag_profile *profile)
 	return 0;
 }
 
+/*
+ * Read the profile the mouse uses now: without a select, chunk 0 is the
+ * active profile's. The profile button changes it behind libratbag's back.
+ */
+static int
+pa_read_active_profile(struct ratbag_device *device, unsigned int *index)
+{
+	uint8_t reply[PA_REPORT_SIZE];
+	unsigned int idx;
+	int rc;
+
+	rc = pa_read_chunk(device, PA_CHUNK_SETTINGS, reply);
+	if (rc)
+		return rc;
+
+	idx = pa_chunk_data(reply, PA_CHUNK_SETTINGS)[PA_C0_PROFILE_INDEX];
+	if (idx < 1 || idx > PA_NUM_PROFILES) {
+		log_info(device->ratbag, "unexpected active profile %u\n", idx);
+		return -EIO;
+	}
+
+	*index = idx;
+	return 0;
+}
+
 static int
 pa_commit(struct ratbag_device *device)
 {
-	struct ratbag_profile *profile, *active = NULL;
-	bool wrote = false;
-	int rc = 0, rc_select = 0;
+	struct ratbag_profile *profile;
+	unsigned int active_idx;
+	bool need_write = false;
+	int rc = 0, rc_select;
 
 	/* check before the first write, so a bad value does not leave half the profiles changed */
 	ratbag_device_for_each_profile(device, profile) {
@@ -881,7 +907,21 @@ pa_commit(struct ratbag_device *device)
 				  profile->debounce, PA_DEBOUNCE_MAX);
 			return -EINVAL;
 		}
+		if (profile->dirty && pa_has_changes(profile))
+			need_write = true;
 	}
+
+	if (!need_write)
+		return 0;
+
+	/*
+	 * The select command that ends a commit also switches the mouse to
+	 * that profile, so it must be the one the mouse is on now, not the
+	 * one libratbag saw at probe time.
+	 */
+	rc = pa_read_active_profile(device, &active_idx);
+	if (rc)
+		return rc;
 
 	ratbag_device_for_each_profile(device, profile) {
 		if (!profile->dirty || !pa_has_changes(profile))
@@ -890,21 +930,13 @@ pa_commit(struct ratbag_device *device)
 		log_debug(device->ratbag, "profile %u changed, rewriting\n",
 			  profile->index);
 
-		wrote = true;
 		rc = pa_write_profile(profile);
 		if (rc)
 			break;
 	}
 
 	/* leave the read selector on the active profile, like the vendor software */
-	if (wrote) {
-		ratbag_device_for_each_profile(device, profile) {
-			if (profile->is_active)
-				active = profile;
-		}
-		if (active)
-			rc_select = pa_select_profile(device, active->index + 1);
-	}
+	rc_select = pa_select_profile(device, active_idx);
 
 	return rc ? rc : rc_select;
 }
@@ -926,7 +958,6 @@ static int
 pa_probe(struct ratbag_device *device)
 {
 	struct ratbag_profile *profile;
-	uint8_t reply[PA_REPORT_SIZE];
 	unsigned int active_idx;
 	int rc;
 
@@ -935,22 +966,15 @@ pa_probe(struct ratbag_device *device)
 		return rc;
 
 	/*
-	 * The first profile read returns the profile that is currently
-	 * active on the mouse. The wireless mouse does not answer while it
-	 * sleeps or is switched off.
+	 * The wireless mouse does not answer while it sleeps or is switched
+	 * off; the dongle then replies with an all-zero profile 0.
 	 */
-	rc = pa_read_chunk(device, PA_CHUNK_SETTINGS, reply);
+	rc = pa_read_active_profile(device, &active_idx);
 	if (rc) {
 		/* not an error: a sleeping mouse is skipped, not reported as broken */
 		log_info(device->ratbag, "no answer from the mouse (%d)\n", rc);
 		rc = -ENODEV;
 		goto err_close;
-	}
-	active_idx = pa_chunk_data(reply, PA_CHUNK_SETTINGS)[PA_C0_PROFILE_INDEX];
-	if (active_idx < 1 || active_idx > PA_NUM_PROFILES) {
-		log_error(device->ratbag, "unexpected active profile %u, assuming 1\n",
-			  active_idx);
-		active_idx = 1;
 	}
 
 	ratbag_device_init_profiles(device, PA_NUM_PROFILES, PA_NUM_DPI_STAGES,
